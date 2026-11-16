@@ -41,8 +41,14 @@ $('ok').onclick=async()=>{
   $('ok').disabled=true;
   const{error}=await sb.from('consultas').insert({data:dia,hora,nome,whatsapp:zap,modalidade:modo,link_sessao:link,valor:C.VALOR});
   $('msg').hidden=false;
-  if(error){$('msg').textContent=error.code==='23505'?'Esse horário acabou de ser ocupado. Escolha outro.':'Não foi possível agendar: '+error.message';await escolherDia(new Date(dia+'T12:00'));return}
+  if(error){
+    $('msg').textContent=error.code==='23505'?'Esse horário acabou de ser ocupado. Escolha outro.':'Não foi possível agendar: '+error.message;
+    await escolherDia(new Date(dia+'T12:00'));
+    return;
+  }
   $('msg').textContent='Pronto, '+nome+'. Seu horário foi reservado e vou confirmar pelo WhatsApp.';
-  $('nome').value='';$('zap').value='';await escolherDia(new Date(dia+'T12:00'))};
+  $('nome').value='';$('zap').value='';
+  await escolherDia(new Date(dia+'T12:00'));
+};
 desenha();escolherDia(dias[0]);
 </script></body></html>
