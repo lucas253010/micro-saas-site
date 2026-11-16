@@ -1,6 +1,6 @@
 window.CFG = {
-  SUPABASE_URL: 'COLE_AQUI_A_PROJECT_URL',
-  SUPABASE_KEY: 'COLE_AQUI_A_ANON_PUBLIC_KEY',
+  SUPABASE_URL: 'https://qyjyrgiuygqhhjmpqdmo.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_e0xHWhJhoeAFbaoPj2F4mw_obmTJBaF',
   NOME: 'Dra. Helena Duarte',
   SUBTITULO: 'Psicóloga clínica',
   VALOR: 180,
