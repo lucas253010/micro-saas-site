@@ -7,7 +7,7 @@ window.CFG = {
   HORAS: ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00'],
   DIAS_A_FRENTE: 14,
   // Pix: sem acentos em nome e cidade
-  PIX_CHAVE: 'sua-chave-pix-aqui',
+  PIX_CHAVE: 'lucasvieira.pro@hotmail.com',
   PIX_NOME: 'Helena Duarte',
   PIX_CIDADE: 'Sao Paulo'
 };
