@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex"><title>Painel</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css"></head>
+<body><main class="wrap">
+<section class="card" id="login" hidden><h2>Entrar no painel</h2>
+<div class="field"><input id="em" type="email" placeholder="E-mail" autocomplete="username">
+<input id="pw" type="password" placeholder="Senha" autocomplete="current-password">
+<button class="btn" id="entrar">Entrar</button></div><p class="mut" id="err"></p></section>
+<div id="app" hidden>
+<div class="top"><h2>Painel</h2><button class="btn s" id="sair">Sair</button></div>
+<div class="stats"><div class="stat"><b id="s1">0</b><span>sessões hoje</span></div>
+<div class="stat"><b id="s2">0</b><span>pacientes</span></div>
+<div class="stat"><b id="s3">R$ 0</b><span>a receber</span></div></div>
+<section class="card"><h2>Agenda</h2><div id="agenda"></div></section>
+<section class="card"><h2>Pacientes</h2><div id="pac"></div></section></div></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+const C=CFG,sb=supabase.createClient(C.SUPABASE_URL,C.SUPABASE_KEY),$=i=>document.getElementById(i);
+let rows=[],aberto={};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const brl=n=>'R$ '+Number(n).toFixed(2).replace('.',',');
+const fdata=s=>new Date(s+'T12:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'});
+function crc(s){let c=0xFFFF;for(let i=0;i<s.length;i++){c^=s.charCodeAt(i)<<8;for(let j=0;j<8;j++)c=c&0x8000?((c<<1)^0x1021):(c<<1);c&=0xFFFF}return c.toString(16).toUpperCase().padStart(4,'0')}
+function pixCode(valor){const f=(id,v)=>id+String(v.length).padStart(2,'0')+v;
+  const p=f('00','01')+f('01','11')+f('26',f('00','br.gov.bcb.pix')+f('01',C.PIX_CHAVE))+f('52','0000')+f('53','986')+f('54',Number(valor).toFixed(2))+f('58','BR')+f('59',C.PIX_NOME.slice(0,25))+f('60',C.PIX_CIDADE.slice(0,15))+f('62',f('05','***'))+'6304';
+  return p+crc(p)}
+const zapUrl=(r,t)=>'https://wa.me/'+(r.whatsapp||'')+'?text='+encodeURIComponent(t);
+const lembrete=r=>'Oi, '+r.nome.split(' ')[0]+'! Lembrando da sua sessão '+fdata(r.data)+' às '+r.hora.slice(0,5)+'.'+(r.link_sessao?' Link da sessão: '+r.link_sessao+'.':'')+' Pode confirmar?';
+
+async function init(){const{data:{session}}=await sb.auth.getSession();session?abrir():$('login').hidden=false}
+function abrir(){$('login').hidden=true;$('app').hidden=false;carregar()}
+$('entrar').onclick=async()=>{const{error}=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value});
+  if(error)$('err').textContent='E-mail ou senha incorretos.';else abrir()};
+$('sair').onclick=async()=>{await sb.auth.signOut();location.reload()};
+async function carregar(){const{data,error}=await sb.from('consultas').select('*').order('data').order('hora');
+  if(error){$('agenda').textContent='Erro ao carregar: '+error.message;return}rows=data;desenha()}
+
+function desenha(){
+  const hoje=ymd(new Date()),ativos=rows.filter(r=>r.status!=='Cancelada'),prox=ativos.filter(r=>r.data>=hoje);
+  $('s1').textContent=prox.filter(r=>r.data===hoje).length;
+  const pac={};ativos.forEach(r=>{const k=r.whatsapp||r.nome;(pac[k]??={nome:r.nome,n:0,pago:0});pac[k].n++;if(r.pago)pac[k].pago+=Number(r.valor)});
+  $('s2').textContent=Object.keys(pac).length;
+  $('s3').textContent=brl(ativos.filter(r=>!r.pago).reduce((a,r)=>a+Number(r.valor),0));
+  $('agenda').innerHTML=prox.length?prox.map(r=>`<div class="row">
+    <div class="when">${r.hora.slice(0,5)}<small>${fdata(r.data)}</small></div>
+    <div class="who">${esc(r.nome)}</div><span class="tag">${esc(r.modalidade)}</span>
+    <span class="tag ${r.status==='Confirmada'?'ok':'new'}">${r.status}</span>
+    <span class="tag ${r.pago?'ok':'new'}">${r.pago?'Pago':'Pendente'}</span>
+    <div class="acts">
+      ${r.status==='Nova'?`<button class="btn s" data-a="conf" data-id="${r.id}">Confirmar</button>`:''}
+      <button class="btn s" data-a="zap" data-id="${r.id}">Lembrar por WhatsApp</button>
+      ${r.pago?'':`<button class="btn s" data-a="pix" data-id="${r.id}">Cobrar por Pix</button>`}
+      <button class="btn s" data-a="canc" data-id="${r.id}">Cancelar</button></div>
+    ${aberto[r.id]&&!r.pago?`<div class="msg" style="width:100%">Pix de ${brl(r.valor)}. Código copia e cola:<br><small>${pixCode(r.valor)}</small>
+      <div class="acts"><button class="btn s" data-a="copiar" data-id="${r.id}">Copiar código</button>
+      <button class="btn s" data-a="zappix" data-id="${r.id}">Enviar por WhatsApp</button>
+      <button class="btn s" data-a="pago" data-id="${r.id}">Marcar como pago</button></div></div>`:''}
+    ${r.link_sessao?`<div class="mut" style="width:100%;margin:0">Sessão online: ${esc(r.link_sessao)}</div>`:''}</div>`).join(''):'<p class="mut">Nenhuma consulta agendada ainda.</p>';
+  $('pac').innerHTML=Object.values(pac).map(p=>`<div class="row"><div class="who">${esc(p.nome)}</div><span class="tag">${p.n} ${p.n>1?'sessões':'sessão'}</span><span class="tag ok">${brl(p.pago)} recebido</span></div>`).join('')||'<p class="mut">Os pacientes aparecem aqui.</p>'}
+
+async function upd(r,p){const{error}=await sb.from('consultas').update(p).eq('id',r.id);error?alert(error.message):carregar()}
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]');if(!b)return;
+  const r=rows.find(x=>x.id===b.dataset.id),a=b.dataset.a;
+  if(a==='conf')upd(r,{status:'Confirmada'});
+  if(a==='pago')upd(r,{pago:true});
+  if(a==='canc'&&confirm('Cancelar esta consulta?'))upd(r,{status:'Cancelada'});
+  if(a==='zap')window.open(zapUrl(r,lembrete(r)),'_blank','noopener');
+  if(a==='pix'){aberto[r.id]=!aberto[r.id];desenha()}
+  if(a==='copiar')navigator.clipboard.writeText(pixCode(r.valor)).then(()=>b.textContent='Copiado');
+  if(a==='zappix')window.open(zapUrl(r,'Olá! Segue o Pix da sessão ('+brl(r.valor)+'), copia e cola:\n'+pixCode(r.valor)),'_blank','noopener')});
+init();
+</script></body></html>
