@@ -24,6 +24,7 @@ details{border-top:1px solid var(--line);padding:12px 0}
 details:first-of-type{border-top:0}
 summary{cursor:pointer;display:flex;flex-direction:column;gap:2px;font-weight:600}
 summary .mut{font-weight:400;margin:0;font-size:14px}
+.tab+.tab{margin-left:0}
 </style></head>
 <body><main class="wrap">
 <section class="card" id="login" hidden><h2>Entrar no painel</h2>
@@ -45,10 +46,15 @@ summary .mut{font-weight:400;margin:0;font-size:14px}
 <div class="tabs" role="tablist">
 <button class="tab" data-tab="hoje" aria-selected="true">Hoje <span id="nh">0</span></button>
 <button class="tab" data-tab="prox" aria-selected="false">Próximas <span id="np">0</span></button>
-<button class="tab" data-tab="pac" aria-selected="false">Pacientes</button></div>
+<button class="tab" data-tab="pac" aria-selected="false">Pacientes</button>
+<button class="tab" data-tab="blq" aria-selected="false">Bloqueios</button></div>
 <section class="card" id="p-hoje"><h2>Pacientes de hoje</h2><div id="agenda-hoje"></div></section>
 <section class="card" id="p-prox" hidden><h2>Próximas consultas</h2><div id="agenda-prox"></div></section>
-<section class="card" id="p-pac" hidden><h2>Todos os pacientes</h2>
+<section class="card" id="p-blq" hidden><h2>Bloqueios de agenda</h2>
+<p class="mut">Feriados, férias, almoço ou qualquer horário em que você não atende. O site do paciente respeita na hora.</p>
+<div class="field"><input id="bdata" type="date"><select id="bhora"></select><input id="bmot" placeholder="Motivo (opcional)"><button class="btn" id="bsalvar">Bloquear</button></div>
+<div id="blista"></div></section>
+<section class="card" id="p-pac" hidden><h2>Todos os pacientes</h2><button class="btn s" id="csv">Exportar planilha (CSV)</button>
 <input id="busca" type="search" placeholder="Buscar paciente pelo nome" style="width:100%;margin:8px 0 4px"><div id="pacientes"></div></section></div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -109,20 +115,26 @@ $('entrar').onclick=async()=>{const{error}=await sb.auth.signInWithPassword({ema
 $('sair').onclick=async()=>{await sb.auth.signOut();location.reload()};
 $('demo').onclick=()=>{demoOn=!demoOn;$('bd').hidden=!demoOn;$('demo').textContent=demoOn?'Voltar aos dados reais':'Ver com dados de exemplo';painel()};
 async function carregar(){const{data,error}=await sb.from('consultas').select('*').order('data').order('hora');
-  if(error){$('agenda-hoje').textContent='Erro ao carregar: '+error.message;return}rows=data;desenha();painel()}
+  if(error){$('agenda-hoje').textContent='Erro ao carregar: '+error.message;return}rows=data;desenha();painel();carregaBlq()}
 
-let abertoP={},aba='hoje';
+let abertoP={},aba='hoje',remarc={},blq=[];
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 function linha(r){return `<div class="row">
     <div class="when">${r.hora.slice(0,5)}<small>${fdata(r.data)}</small></div>
     <div class="who">${esc(r.nome)}</div><span class="tag">${esc(r.modalidade)}</span>
     <span class="tag ${r.status==='Confirmada'?'ok':'new'}">${r.status}</span>
     <span class="tag ${r.pago?'ok':'new'}">${r.pago?'Pago':'Pendente'}</span>
+    ${r.presenca?`<span class="tag ${r.presenca==='Compareceu'?'ok':'new'}">${r.presenca}</span>`:''}
     <div class="acts">
       ${r.status==='Nova'?`<button class="btn s" data-a="conf" data-id="${r.id}">Confirmar</button>`:''}
       <button class="btn s" data-a="zap" data-id="${r.id}">Lembrar por WhatsApp</button>
       ${r.pago?'':`<button class="btn s" data-a="pix" data-id="${r.id}">Cobrar por Pix</button>`}
+      ${!r.presenca&&r.data<=ymd(new Date())?`<button class="btn s" data-a="pres" data-v="Compareceu" data-id="${r.id}">Compareceu</button><button class="btn s" data-a="pres" data-v="Faltou" data-id="${r.id}">Faltou</button>`:''}
+      ${r.pago?`<button class="btn s" data-a="rec" data-id="${r.id}">Recibo</button>`:''}
+      <button class="btn s" data-a="remarc" data-id="${r.id}">Remarcar</button>
+      <button class="btn s" data-a="rep" data-id="${r.id}">Repetir toda semana</button>
       <button class="btn s" data-a="canc" data-id="${r.id}">Cancelar</button></div>
+    ${remarc[r.id]?`<div class="msg" style="width:100%"><div class="field" style="margin:0"><input type="date" id="rd-${r.id}" value="${r.data}"><select id="rh-${r.id}">${C.HORAS.map(x=>`<option ${x===r.hora.slice(0,5)?'selected':''}>${x}</option>`).join('')}</select><button class="btn s" data-a="rsalva" data-id="${r.id}">Salvar nova data</button></div></div>`:''}
     ${aberto[r.id]&&!r.pago?`<div class="msg" style="width:100%">Pix de ${brl(r.valor)}. Código copia e cola:<br><small>${pixCode(r.valor)}</small>
       <div class="acts"><button class="btn s" data-a="copiar" data-id="${r.id}">Copiar código</button>
       <button class="btn s" data-a="zappix" data-id="${r.id}">Enviar por WhatsApp</button>
@@ -148,24 +160,49 @@ function pacientes(){
     const hist=p.h.slice().sort((a,b)=>(b.data+b.hora).localeCompare(a.data+a.hora)).map(r=>`<div class="row" style="${r.status==='Cancelada'?'opacity:.55':''}">
       <div class="when">${r.hora.slice(0,5)}<small>${fdata(r.data)}</small></div><div class="who">${esc(r.modalidade)}</div>
       <span class="tag ${r.status==='Confirmada'?'ok':r.status==='Nova'?'new':''}">${r.status}</span>
-      <span class="tag ${r.pago?'ok':'new'}">${r.pago?'Pago':'Pendente'}</span></div>`).join('');
+      <span class="tag ${r.pago?'ok':'new'}">${r.pago?'Pago':'Pendente'}</span>${r.presenca?`<span class="tag">${r.presenca}</span>`:''}</div>`).join('');
     return `<details data-k="${esc(p.k)}" ${abertoP[p.k]?'open':''}><summary><span>${esc(p.nome)}</span>
       <span class="mut">${feitas} ${feitas===1?'sessão feita':'sessões feitas'} · ${prox} ${prox===1?'próxima':'próximas'} · ${pen>0?brl(pen)+' pendente':'em dia'}</span></summary>
       ${p.zap?`<div class="acts" style="margin:8px 0"><a class="btn s" href="https://wa.me/${esc(p.zap)}" target="_blank" rel="noopener">Abrir WhatsApp</a></div>`:''}${hist}</details>`}).join(''):'<p class="mut">Nenhum paciente encontrado.</p>'}
 $('busca').oninput=pacientes;
 document.addEventListener('toggle',e=>{const d=e.target;if(d.dataset&&d.dataset.k!==undefined)abertoP[d.dataset.k]=d.open},true);
-function trocaAba(a){aba=a;document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===a));['hoje','prox','pac'].forEach(x=>$('p-'+x).hidden=x!==a)}
+function trocaAba(a){aba=a;document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===a));['hoje','prox','pac','blq'].forEach(x=>$('p-'+x).hidden=x!==a)}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>trocaAba(b.dataset.tab));
 
 async function upd(r,p){const{error}=await sb.from('consultas').update(p).eq('id',r.id);error?alert(error.message):carregar()}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]');if(!b)return;
   const r=rows.find(x=>x.id===b.dataset.id),a=b.dataset.a;
+  if(a==='bdel'){const{error}=await sb.from('bloqueios').delete().eq('id',b.dataset.id);error?alert(error.message):carregaBlq();return}
   if(a==='conf')upd(r,{status:'Confirmada'});
+  if(a==='pres')upd(r,{presenca:b.dataset.v});
+  if(a==='remarc'){remarc[r.id]=!remarc[r.id];desenha()}
+  if(a==='rsalva'){const d=$('rd-'+r.id).value,hh=$('rh-'+r.id).value;if(!d)return;
+    const{error}=await sb.from('consultas').update({data:d,hora:hh}).eq('id',r.id);
+    if(error)alert(error.code==='23505'?'Esse horário já está ocupado.':error.message);else{remarc[r.id]=false;carregar()}}
+  if(a==='rep'){const n=parseInt(prompt('Repetir toda semana por quantas semanas a mais?','8'),10);if(!n||n<1)return;
+    let ok=0;const falhas=[];
+    for(let i=1;i<=n;i++){const d=new Date(r.data+'T12:00');d.setDate(d.getDate()+7*i);const ds=ymd(d);
+      if(blq.some(x=>x.data===ds&&(!x.hora||x.hora.slice(0,5)===r.hora.slice(0,5)))){falhas.push(fdata(ds));continue}
+      const{error}=await sb.from('consultas').insert({data:ds,hora:r.hora,nome:r.nome,whatsapp:r.whatsapp,modalidade:r.modalidade,link_sessao:r.link_sessao,valor:r.valor,status:'Confirmada'});
+      error?falhas.push(fdata(ds)):ok++}
+    alert(ok+' sessões criadas.'+(falhas.length?' Não criadas (horário ocupado ou bloqueado): '+falhas.join(', '):''));carregar()}
+  if(a==='rec'){const w=window.open('','_blank');if(!w)return alert('Permita pop-ups para gerar o recibo.');
+    w.document.write(`<!DOCTYPE html><meta charset="utf-8"><title>Recibo</title><body style="font:16px/1.6 system-ui;max-width:640px;margin:40px auto;padding:0 20px"><h1>Recibo</h1><p>Recebi de <b>${esc(r.nome)}</b> a quantia de <b>${brl(r.valor)}</b>, referente à sessão realizada em <b>${new Date(r.data+'T12:00').toLocaleDateString('pt-BR')}</b>, às ${r.hora.slice(0,5)}.</p><p style="margin-top:60px">______________________________<br>${esc(C.NOME)}${C.CRP?'<br>'+esc(C.CRP):''}</p><p style="color:#666;font-size:13px">Emitido em ${new Date().toLocaleDateString('pt-BR')}</p><script>onload=()=>print()<\/script>`);w.document.close()}
   if(a==='pago')upd(r,{pago:true});
   if(a==='canc'&&confirm('Cancelar esta consulta?'))upd(r,{status:'Cancelada'});
   if(a==='zap')window.open(zapUrl(r,lembrete(r)),'_blank','noopener');
   if(a==='pix'){aberto[r.id]=!aberto[r.id];desenha()}
   if(a==='copiar')navigator.clipboard.writeText(pixCode(r.valor)).then(()=>b.textContent='Copiado');
   if(a==='zappix')window.open(zapUrl(r,pixCode(r.valor)),'_blank','noopener')});
+$('bhora').innerHTML='<option value="">Dia inteiro</option>'+C.HORAS.map(x=>`<option>${x}</option>`).join('');
+async function carregaBlq(){const{data,error}=await sb.from('bloqueios').select('*').order('data').order('hora');blq=error?[]:data;desenhaBlq()}
+function desenhaBlq(){const hoje=ymd(new Date()),l=blq.filter(b=>b.data>=hoje);
+  $('blista').innerHTML=l.length?l.map(b=>`<div class="row"><div class="when">${b.hora?b.hora.slice(0,5):'Dia todo'}<small>${fdata(b.data)}</small></div><div class="who">${esc(b.motivo||'Sem motivo')}</div><button class="btn s" data-a="bdel" data-id="${b.id}">Remover</button></div>`).join(''):'<p class="mut">Nenhum bloqueio.</p>'}
+$('bsalvar').onclick=async()=>{if(!$('bdata').value)return alert('Escolha a data.');
+  const{error}=await sb.from('bloqueios').insert({data:$('bdata').value,hora:$('bhora').value||null,motivo:$('bmot').value.trim()||null});
+  if(error)alert(error.message);else{$('bmot').value='';carregaBlq()}};
+$('csv').onclick=()=>{const L=[['Data','Hora','Paciente','WhatsApp','Modalidade','Status','Presença','Pago','Valor']].concat(rows.map(r=>[r.data,r.hora.slice(0,5),r.nome,r.whatsapp||'',r.modalidade,r.status,r.presenca||'',r.pago?'Sim':'Não',Number(r.valor).toFixed(2).replace('.',',')]));
+  const csv='\ufeff'+L.map(l=>l.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='consultas.csv';a.click()};
 init();
 </script></body></html>

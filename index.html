@@ -82,6 +82,7 @@ details p{margin:8px 0 0;color:var(--mut)}
 <div class="field"><input id="nome" placeholder="Seu nome" autocomplete="name">
 <input id="zap" placeholder="WhatsApp com DDD" inputmode="tel" autocomplete="tel">
 <select id="modo" aria-label="Modalidade"><option>Presencial</option><option>Online</option></select>
+<label style="width:100%;display:flex;gap:8px;align-items:flex-start;font-size:14px;color:var(--mut)"><input type="checkbox" id="lgpd" style="flex:none;min-width:0;width:auto;margin-top:4px"><span>Concordo em compartilhar meu nome e WhatsApp apenas para agendar e confirmar a consulta.</span></label>
 <button class="btn" id="ok" disabled>Agendar horário</button></div>
 <div class="msg" id="msg" hidden></div></div></section>
 <section class="wrap"><div class="card"><h2>Perguntas frequentes</h2>
@@ -114,8 +115,13 @@ $('prox').onclick=()=>ir(mes.getFullYear(),mes.getMonth()+1);
 $('selmes').onchange=()=>ir(mes.getFullYear(),+$('selmes').value);
 $('selano').onchange=()=>ir(+$('selano').value,mes.getMonth());
 
+let bloq={};
+async function carregaBloq(){const y=mes.getFullYear(),m=mes.getMonth(),k=y+'-'+m;if(bloq[k])return;bloq[k]=[];
+  try{const{data}=await sb.rpc('bloqueios_publicos',{ini:ymd(new Date(y,m,1)),fim:ymd(new Date(y,m+1,0))});bloq[k]=data||[]}catch(e){}}
+const diaBloq=d=>(bloq[d.getFullYear()+'-'+d.getMonth()]||[]).some(b=>b.data===ymd(d)&&!b.hora);
 function calendario(){
   const y=mes.getFullYear(),m=mes.getMonth();addAno(y);
+  if(!bloq[y+'-'+m])carregaBloq().then(calendario);
   $('selmes').value=m;$('selano').value=y;
   $('ant').disabled=y===hojeD.getFullYear()&&m===hojeD.getMonth();
   $('prox').disabled=!!limite&&new Date(y,m+1,1)>limite;
@@ -124,10 +130,10 @@ function calendario(){
   for(let i=0;i<new Date(y,m,1).getDay();i++)g.appendChild(document.createElement('div'));
   for(let n=1;n<=new Date(y,m+1,0).getDate();n++){
     const d=new Date(y,m,n),b=document.createElement('button');b.className='d'+(ymd(d)===ymd(hojeD)?' hoje':'');
-    b.textContent=n;b.disabled=!livre(d);b.setAttribute('aria-pressed',ymd(d)===dia);b.onclick=()=>escolherDia(d);g.appendChild(b)}
+    b.textContent=n;b.disabled=!livre(d)||diaBloq(d);b.setAttribute('aria-pressed',ymd(d)===dia);b.onclick=()=>escolherDia(d);g.appendChild(b)}
 }
 async function escolherDia(d){dia=ymd(d);hora=null;mes=new Date(d.getFullYear(),d.getMonth(),1);
-  const{data}=await sb.rpc('horarios_ocupados',{dia});ocupados=(data||[]).map(x=>x.hora.slice(0,5));desenha()}
+  const{data}=await sb.rpc('horarios_ocupados',{dia});ocupados=(data||[]).map(x=>x.hora.slice(0,5));await carregaBloq();ocupados=ocupados.concat((bloq[d.getFullYear()+'-'+d.getMonth()]||[]).filter(b=>b.data===dia&&b.hora).map(b=>b.hora.slice(0,5)));desenha()}
 function desenha(){
   calendario();$('horas').innerHTML='';
   $('qdia').textContent=dia?'Horários de '+new Date(dia+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}):'Escolha um dia no calendário.';
@@ -137,8 +143,8 @@ function desenha(){
     const passou=hoje&&(+h.slice(0,2)*60+ +h.slice(3))<=agora.getHours()*60+agora.getMinutes();
     b.disabled=ocupados.includes(h)||passou;b.setAttribute('aria-pressed',hora===h);b.onclick=()=>{hora=h;desenha()};$('horas').appendChild(b)});
   valida()}
-function valida(){$('ok').disabled=!(dia&&hora&&$('nome').value.trim()&&$('zap').value.replace(/\D/g,'').length>=10)}
-$('nome').oninput=$('zap').oninput=valida;
+function valida(){$('ok').disabled=!(dia&&hora&&$('nome').value.trim()&&$('zap').value.replace(/\D/g,'').length>=10&&$('lgpd').checked)}
+$('nome').oninput=$('zap').oninput=valida;$('lgpd').onchange=valida;
 $('ok').onclick=async()=>{
   const nome=$('nome').value.trim(),modo=$('modo').value;let zap=$('zap').value.replace(/\D/g,'');if(zap.length<=11)zap='55'+zap;
   const link=modo==='Online'?'https://meet.jit.si/consulta-'+crypto.randomUUID().slice(0,12):null;
@@ -169,10 +175,11 @@ $('orb').onclick=()=>{
 async function vagaProxima(){
   try{
     const agora=new Date();
+    const{data:bl}=await sb.rpc('bloqueios_publicos',{ini:ymd(hojeD),fim:ymd(new Date(hojeD.getTime()+31*864e5))});const B=bl||[];
     for(let i=0;i<30;i++){
-      const d=new Date(hojeD);d.setDate(d.getDate()+i);if(!livre(d))continue;
+      const d=new Date(hojeD);d.setDate(d.getDate()+i);if(!livre(d)||B.some(b=>b.data===ymd(d)&&!b.hora))continue;
       const{data}=await sb.rpc('horarios_ocupados',{dia:ymd(d)});
-      const oc=(data||[]).map(x=>x.hora.slice(0,5));
+      const oc=(data||[]).map(x=>x.hora.slice(0,5)).concat(B.filter(b=>b.data===ymd(d)&&b.hora).map(b=>b.hora.slice(0,5)));
       const h=C.HORAS.find(x=>!oc.includes(x)&&!(i===0&&(+x.slice(0,2)*60+ +x.slice(3))<=agora.getHours()*60+agora.getMinutes()));
       if(h){const b=$('vaga');b.hidden=false;
         b.textContent='Próxima vaga: '+d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})+' às '+h+'. Reservar';
