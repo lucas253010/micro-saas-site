@@ -3,25 +3,63 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Agende sua consulta</title>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css"></head>
-<body><main class="wrap">
-<section class="hero"><h1>Um espaço seguro para você se ouvir com calma</h1>
-<p class="mut">Terapia individual presencial e online, com acolhimento e sem pressa. Escolha um horário e eu confirmo com você.</p>
-<p class="mut" id="quem"></p></section>
-<section class="card"><h2>Agende sua primeira conversa</h2>
+<link rel="stylesheet" href="style.css">
+<style>
+html{scroll-behavior:smooth}
+.top2{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));backdrop-filter:blur(10px);background:color-mix(in srgb,var(--bg) 80%,transparent)}
+.logo{font-family:Fraunces,Georgia,serif;font-weight:600;font-size:18px}
+.top2 .btn{text-decoration:none}
+.h{position:relative;overflow:hidden;padding:56px 16px 64px;background:radial-gradient(900px 400px at 15% 0%,color-mix(in srgb,var(--ac) 38%,transparent),transparent),radial-gradient(700px 360px at 90% 30%,color-mix(in srgb,var(--ok) 30%,transparent),transparent)}
+.hin{position:relative;max-width:880px;margin:0 auto}
+.h h1{font-size:clamp(34px,8vw,64px);max-width:12em;letter-spacing:-.01em}
+.pill{display:inline-block;padding:6px 14px;border-radius:999px;background:var(--s);border:1px solid var(--line);font-size:14px;margin:0 0 18px}
+.lead{font-size:clamp(17px,2.6vw,20px);color:var(--mut);max-width:32em;margin:18px 0 0}
+.btn.big{display:inline-block;margin-top:26px;padding:16px 28px;font-size:17px;border-radius:14px;text-decoration:none;box-shadow:0 10px 30px color-mix(in srgb,var(--ac) 45%,transparent)}
+.pts{list-style:none;display:flex;flex-wrap:wrap;gap:10px;padding:0;margin:26px 0 0}
+.pts li{padding:7px 14px;border-radius:999px;background:color-mix(in srgb,var(--s) 80%,transparent);border:1px solid var(--line);font-size:14px}
+.blob{position:absolute;border-radius:50%;filter:blur(60px);opacity:.5;animation:fl 14s ease-in-out infinite alternate}
+.b1{width:280px;height:280px;right:-60px;top:-40px;background:var(--ac)}
+.b2{width:220px;height:220px;left:40%;bottom:-80px;background:var(--ok);animation-delay:-6s}
+@keyframes fl{to{transform:translate(-30px,30px) scale(1.15)}}
+@media(prefers-reduced-motion:reduce){.blob{animation:none}html{scroll-behavior:auto}}
+.steps{padding-top:40px}
+.steps ol{list-style:none;padding:0;margin:16px 0 0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.steps li{background:var(--s);border:1px solid var(--line);border-radius:16px;padding:18px}
+.steps b{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--ac);color:var(--acink);margin-bottom:10px}
+.steps p{margin:0;color:var(--mut);font-size:15px}
+.book{border-top:4px solid var(--ac);box-shadow:0 20px 50px color-mix(in srgb,var(--ac) 18%,transparent)}
+.chip[aria-pressed=true]{background:var(--ac);color:var(--acink);border-color:var(--ac)}
+.foot{text-align:center;color:var(--mut);font-size:14px;padding:8px 16px 32px}
+@media(max-width:640px){.steps ol{grid-template-columns:1fr}}
+</style></head>
+<body>
+<header class="top2"><span class="logo" id="logo">Agende sua consulta</span><a class="btn s" href="#agendar">Agendar</a></header>
+<section class="h"><div class="blob b1"></div><div class="blob b2"></div>
+<div class="hin"><p class="pill">Atendimento presencial e online</p>
+<h1>Um espaço seguro para você se ouvir com calma</h1>
+<p class="lead">Terapia individual com acolhimento, sigilo e sem pressa. Escolha seu horário em menos de um minuto.</p>
+<a class="btn big" href="#agendar">Agendar minha primeira conversa</a>
+<ul class="pts"><li>Sigilo profissional</li><li>Sessões de 50 minutos</li><li>Confirmação pelo WhatsApp</li></ul>
+<p class="mut" id="quem"></p></div></section>
+<section class="wrap steps"><h2>Como funciona</h2>
+<ol><li><b>1</b><h3 style="margin:0 0 4px">Escolha o horário</h3><p>Veja os dias livres e reserve o que combina com você.</p></li>
+<li><b>2</b><h3 style="margin:0 0 4px">Receba a confirmação</h3><p>Eu confirmo com você pelo WhatsApp.</p></li>
+<li><b>3</b><h3 style="margin:0 0 4px">Faça a sessão</h3><p>No consultório ou online, com o link enviado antes.</p></li></ol></section>
+<section class="wrap" id="agendar"><div class="card book"><h2>Agende sua primeira conversa</h2>
 <p class="mut">Sessão de acolhimento de 50 minutos.</p>
 <div class="chips" id="dias"></div><div class="slots" id="horas"></div>
 <div class="field"><input id="nome" placeholder="Seu nome" autocomplete="name">
 <input id="zap" placeholder="WhatsApp com DDD" inputmode="tel" autocomplete="tel">
 <select id="modo" aria-label="Modalidade"><option>Presencial</option><option>Online</option></select>
 <button class="btn" id="ok" disabled>Agendar horário</button></div>
-<div class="msg" id="msg" hidden></div></section></main>
+<div class="msg" id="msg" hidden></div></div></section>
+<p class="foot">Seus dados são usados apenas para agendar e confirmar sua consulta.</p>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <script>
 const C=CFG,sb=supabase.createClient(C.SUPABASE_URL,C.SUPABASE_KEY),$=i=>document.getElementById(i);
 let dia=null,hora=null,ocupados=[];
-$('quem').textContent=C.NOME+', '+C.SUBTITULO;
+$('quem').textContent=C.NOME+', '+C.SUBTITULO;$('logo').textContent=C.NOME;document.title='Agende com '+C.NOME;
 const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const dias=[];for(let i=0;dias.length<C.DIAS_A_FRENTE&&i<40;i++){const d=new Date();d.setDate(d.getDate()+i);if(d.getDay()>0&&d.getDay()<6)dias.push(d)}
 async function escolherDia(d){dia=ymd(d);hora=null;const{data}=await sb.rpc('horarios_ocupados',{dia});ocupados=(data||[]).map(x=>x.hora.slice(0,5));desenha()}
