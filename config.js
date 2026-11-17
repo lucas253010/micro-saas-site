@@ -9,5 +9,9 @@ window.CFG = {
   // Pix: sem acentos em nome e cidade
   PIX_CHAVE: 'lucasvieira.pro@hotmail.com',
   PIX_NOME: 'Helena Duarte',
-  PIX_CIDADE: 'Sao Paulo'
+  PIX_CIDADE: 'Sao Paulo',
+  PIX_CIDADE: 'Sao Paulo',
+  WHATSAPP: '11997471927',
+  DIAS_ATENDIMENTO: [1, 2, 3, 4, 5],
+  MESES_A_FRENTE: 12
 };
