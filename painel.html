@@ -15,6 +15,15 @@
 .cw{position:relative;height:250px;margin-top:10px}
 .badge{display:inline-block;margin-left:8px;font-size:13px;padding:3px 10px;border-radius:999px;background:var(--soft);vertical-align:middle}
 @media(max-width:720px){.kpis{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tab{border:1px solid var(--line);background:var(--s);border-radius:999px;padding:9px 16px;font-weight:600}
+.tab span{font-weight:400;opacity:.75;margin-left:4px}
+.tab[aria-selected=true]{background:var(--ac);color:var(--acink);border-color:var(--ac)}
+a.btn{text-decoration:none;display:inline-block}
+details{border-top:1px solid var(--line);padding:12px 0}
+details:first-of-type{border-top:0}
+summary{cursor:pointer;display:flex;flex-direction:column;gap:2px;font-weight:600}
+summary .mut{font-weight:400;margin:0;font-size:14px}
 </style></head>
 <body><main class="wrap">
 <section class="card" id="login" hidden><h2>Entrar no painel</h2>
@@ -33,8 +42,14 @@
 <section class="card"><h2>Receita dos últimos 6 meses</h2><div class="cw"><canvas id="c1"></canvas></div></section>
 <section class="card"><h2>Modalidade</h2><div class="cw"><canvas id="c3"></canvas></div></section></div>
 <section class="card"><h2>Sessões por dia da semana</h2><div class="cw" style="height:200px"><canvas id="c2"></canvas></div></section>
-<section class="card"><h2>Agenda</h2><div id="agenda"></div></section>
-<section class="card"><h2>Pacientes</h2><div id="pac"></div></section></div></main>
+<div class="tabs" role="tablist">
+<button class="tab" data-tab="hoje" aria-selected="true">Hoje <span id="nh">0</span></button>
+<button class="tab" data-tab="prox" aria-selected="false">Próximas <span id="np">0</span></button>
+<button class="tab" data-tab="pac" aria-selected="false">Pacientes</button></div>
+<section class="card" id="p-hoje"><h2>Pacientes de hoje</h2><div id="agenda-hoje"></div></section>
+<section class="card" id="p-prox" hidden><h2>Próximas consultas</h2><div id="agenda-prox"></div></section>
+<section class="card" id="p-pac" hidden><h2>Todos os pacientes</h2>
+<input id="busca" type="search" placeholder="Buscar paciente pelo nome" style="width:100%;margin:8px 0 4px"><div id="pacientes"></div></section></div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="config.js"></script>
@@ -94,12 +109,11 @@ $('entrar').onclick=async()=>{const{error}=await sb.auth.signInWithPassword({ema
 $('sair').onclick=async()=>{await sb.auth.signOut();location.reload()};
 $('demo').onclick=()=>{demoOn=!demoOn;$('bd').hidden=!demoOn;$('demo').textContent=demoOn?'Voltar aos dados reais':'Ver com dados de exemplo';painel()};
 async function carregar(){const{data,error}=await sb.from('consultas').select('*').order('data').order('hora');
-  if(error){$('agenda').textContent='Erro ao carregar: '+error.message;return}rows=data;desenha();painel()}
+  if(error){$('agenda-hoje').textContent='Erro ao carregar: '+error.message;return}rows=data;desenha();painel()}
 
-function desenha(){
-  const hoje=ymd(new Date()),ativos=rows.filter(r=>r.status!=='Cancelada'),prox=ativos.filter(r=>r.data>=hoje);
-  const pac={};ativos.forEach(r=>{const k=r.whatsapp||r.nome;(pac[k]??={nome:r.nome,n:0,pago:0});pac[k].n++;if(r.pago)pac[k].pago+=Number(r.valor)});
-  $('agenda').innerHTML=prox.length?prox.map(r=>`<div class="row">
+let abertoP={},aba='hoje';
+const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+function linha(r){return `<div class="row">
     <div class="when">${r.hora.slice(0,5)}<small>${fdata(r.data)}</small></div>
     <div class="who">${esc(r.nome)}</div><span class="tag">${esc(r.modalidade)}</span>
     <span class="tag ${r.status==='Confirmada'?'ok':'new'}">${r.status}</span>
@@ -113,8 +127,35 @@ function desenha(){
       <div class="acts"><button class="btn s" data-a="copiar" data-id="${r.id}">Copiar código</button>
       <button class="btn s" data-a="zappix" data-id="${r.id}">Enviar por WhatsApp</button>
       <button class="btn s" data-a="pago" data-id="${r.id}">Marcar como pago</button></div></div>`:''}
-    ${r.link_sessao?`<div class="mut" style="width:100%;margin:0">Sessão online: ${esc(r.link_sessao)}</div>`:''}</div>`).join(''):'<p class="mut">Nenhuma consulta agendada ainda.</p>';
-  $('pac').innerHTML=Object.values(pac).map(p=>`<div class="row"><div class="who">${esc(p.nome)}</div><span class="tag">${p.n} ${p.n>1?'sessões':'sessão'}</span><span class="tag ok">${brl(p.pago)} recebido</span></div>`).join('')||'<p class="mut">Os pacientes aparecem aqui.</p>'}
+    ${r.link_sessao?`<div class="mut" style="width:100%;margin:0">Sessão online: ${esc(r.link_sessao)}</div>`:''}</div>`}
+
+function desenha(){
+  const hoje=ymd(new Date()),ativos=rows.filter(r=>r.status!=='Cancelada');
+  const dHoje=ativos.filter(r=>r.data===hoje),dProx=ativos.filter(r=>r.data>hoje),novas=dProx.filter(r=>r.status==='Nova').length;
+  $('agenda-hoje').innerHTML=dHoje.length?dHoje.map(linha).join(''):'<p class="mut">Nenhuma sessão marcada para hoje.</p>';
+  $('agenda-prox').innerHTML=dProx.length?dProx.map(linha).join(''):'<p class="mut">Nenhuma consulta nos próximos dias.</p>';
+  $('nh').textContent=dHoje.length;
+  $('np').textContent=dProx.length+(novas?' · '+novas+(novas>1?' novas':' nova'):'');
+  pacientes()}
+
+function pacientes(){
+  const hoje=ymd(new Date()),q=norm($('busca').value),g={};
+  rows.forEach(r=>{const k=r.whatsapp||r.nome;(g[k]??={k,nome:r.nome,zap:r.whatsapp,h:[]}).h.push(r)});
+  const lista=Object.values(g).filter(p=>norm(p.nome).includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome));
+  $('pacientes').innerHTML=lista.length?lista.map(p=>{
+    const at=p.h.filter(r=>r.status!=='Cancelada'),feitas=at.filter(r=>r.data<hoje).length,prox=at.length-feitas;
+    const pen=at.filter(r=>!r.pago).reduce((a,r)=>a+Number(r.valor),0);
+    const hist=p.h.slice().sort((a,b)=>(b.data+b.hora).localeCompare(a.data+a.hora)).map(r=>`<div class="row" style="${r.status==='Cancelada'?'opacity:.55':''}">
+      <div class="when">${r.hora.slice(0,5)}<small>${fdata(r.data)}</small></div><div class="who">${esc(r.modalidade)}</div>
+      <span class="tag ${r.status==='Confirmada'?'ok':r.status==='Nova'?'new':''}">${r.status}</span>
+      <span class="tag ${r.pago?'ok':'new'}">${r.pago?'Pago':'Pendente'}</span></div>`).join('');
+    return `<details data-k="${esc(p.k)}" ${abertoP[p.k]?'open':''}><summary><span>${esc(p.nome)}</span>
+      <span class="mut">${feitas} ${feitas===1?'sessão feita':'sessões feitas'} · ${prox} ${prox===1?'próxima':'próximas'} · ${pen>0?brl(pen)+' pendente':'em dia'}</span></summary>
+      ${p.zap?`<div class="acts" style="margin:8px 0"><a class="btn s" href="https://wa.me/${esc(p.zap)}" target="_blank" rel="noopener">Abrir WhatsApp</a></div>`:''}${hist}</details>`}).join(''):'<p class="mut">Nenhum paciente encontrado.</p>'}
+$('busca').oninput=pacientes;
+document.addEventListener('toggle',e=>{const d=e.target;if(d.dataset&&d.dataset.k!==undefined)abertoP[d.dataset.k]=d.open},true);
+function trocaAba(a){aba=a;document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===a));['hoje','prox','pac'].forEach(x=>$('p-'+x).hidden=x!==a)}
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>trocaAba(b.dataset.tab));
 
 async function upd(r,p){const{error}=await sb.from('consultas').update(p).eq('id',r.id);error?alert(error.message):carregar()}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]');if(!b)return;
