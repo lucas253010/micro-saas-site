@@ -3,24 +3,44 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex"><title>Painel</title>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css"></head>
+<link rel="stylesheet" href="style.css">
+<style>
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:var(--s);border:1px solid var(--line);border-radius:16px;padding:16px}
+.kpi b{display:block;font-family:Fraunces,Georgia,serif;font-size:clamp(20px,3.4vw,30px);line-height:1.2}
+.kpi span{font-size:13px;color:var(--mut)}
+.kpi.hero{background:linear-gradient(135deg,var(--ac),var(--ok));border:0;color:var(--acink)}
+.kpi.hero span{color:inherit;opacity:.85}
+.g2{display:grid;grid-template-columns:2fr 1fr;gap:16px}.g2 .card{margin-bottom:16px}
+.cw{position:relative;height:250px;margin-top:10px}
+.badge{display:inline-block;margin-left:8px;font-size:13px;padding:3px 10px;border-radius:999px;background:var(--soft);vertical-align:middle}
+@media(max-width:720px){.kpis{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}}
+</style></head>
 <body><main class="wrap">
 <section class="card" id="login" hidden><h2>Entrar no painel</h2>
 <div class="field"><input id="em" type="email" placeholder="E-mail" autocomplete="username">
 <input id="pw" type="password" placeholder="Senha" autocomplete="current-password">
 <button class="btn" id="entrar">Entrar</button></div><p class="mut" id="err"></p></section>
 <div id="app" hidden>
-<div class="top"><h2>Painel</h2><button class="btn s" id="sair">Sair</button></div>
-<div class="stats"><div class="stat"><b id="s1">0</b><span>sessões hoje</span></div>
-<div class="stat"><b id="s2">0</b><span>pacientes</span></div>
-<div class="stat"><b id="s3">R$ 0</b><span>a receber</span></div></div>
+<div class="top"><h2>Painel<span class="badge" id="bd" hidden>dados de exemplo</span></h2>
+<div class="acts" style="width:auto;margin:0"><button class="btn s" id="demo">Ver com dados de exemplo</button><button class="btn s" id="sair">Sair</button></div></div>
+<div class="kpis">
+<div class="kpi hero"><b id="k1">R$ 0,00</b><span>recebido no mês</span></div>
+<div class="kpi"><b id="k2">R$ 0,00</b><span>a receber</span></div>
+<div class="kpi"><b id="k3">0</b><span>sessões no mês</span></div>
+<div class="kpi"><b id="k4">0</b><span>pacientes</span></div></div>
+<div class="g2">
+<section class="card"><h2>Receita dos últimos 6 meses</h2><div class="cw"><canvas id="c1"></canvas></div></section>
+<section class="card"><h2>Modalidade</h2><div class="cw"><canvas id="c3"></canvas></div></section></div>
+<section class="card"><h2>Sessões por dia da semana</h2><div class="cw" style="height:200px"><canvas id="c2"></canvas></div></section>
 <section class="card"><h2>Agenda</h2><div id="agenda"></div></section>
 <section class="card"><h2>Pacientes</h2><div id="pac"></div></section></div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="config.js"></script>
 <script>
 const C=CFG,sb=supabase.createClient(C.SUPABASE_URL,C.SUPABASE_KEY),$=i=>document.getElementById(i);
-let rows=[],aberto={};
+let rows=[],aberto={},charts={},demoOn=false,demoRows=null;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const brl=n=>'R$ '+Number(n).toFixed(2).replace('.',',');
@@ -32,20 +52,53 @@ function pixCode(valor){const f=(id,v)=>id+String(v.length).padStart(2,'0')+v;
 const zapUrl=(r,t)=>'https://wa.me/'+(r.whatsapp||'')+'?text='+encodeURIComponent(t);
 const lembrete=r=>'Oi, '+r.nome.split(' ')[0]+'! Lembrando da sua sessão '+fdata(r.data)+' às '+r.hora.slice(0,5)+'.'+(r.link_sessao?' Link da sessão: '+r.link_sessao+'.':'')+' Pode confirmar?';
 
+function gerarDemo(){
+  let a=7;const rnd=()=>{let t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296};
+  const nomes=['Marina Alves','Rafael Couto','Beatriz Lima','Camila Rocha','Diego Martins','Paula Nunes','Henrique Dias','Larissa Pires','Tiago Barros','Ana Souza','Felipe Moura','Julia Castro'];
+  const out=[];
+  for(let i=170;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const w=d.getDay();if(w===0)continue;
+    const n=Math.min(5,1+Math.floor(rnd()*(2+(170-i)/45)));
+    for(let k=0;k<n;k++)out.push({data:ymd(d),nome:nomes[Math.floor(rnd()*nomes.length)],modalidade:rnd()<.62?'Online':'Presencial',status:'Confirmada',pago:i>6||rnd()<.5,valor:C.VALOR||180})}
+  return out}
+
+function conta(el,fim,fmt){const t0=performance.now();const f=t=>{const p=Math.min((t-t0)/700,1);el.textContent=fmt(fim*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(f)};requestAnimationFrame(f)}
+const col=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function grafico(id,cfg){charts[id]?.destroy();charts[id]=new Chart($(id),cfg)}
+function painel(){
+  const base=demoOn?(demoRows??=gerarDemo()):rows,ativos=base.filter(r=>r.status!=='Cancelada');
+  const ac=col('--ac'),ok=col('--ok'),warn=col('--warn'),mut=col('--mut'),line=col('--line');
+  Chart.defaults.color=mut;Chart.defaults.font.family='system-ui,sans-serif';
+  const key=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  const meses=[];for(let i=5;i>=0;i--){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);meses.push(d)}
+  const soma=(m,pago)=>ativos.filter(r=>r.data.slice(0,7)===key(m)&&!!r.pago===pago).reduce((a,r)=>a+Number(r.valor),0);
+  const mesAtual=key(new Date());
+  conta($('k1'),soma(new Date(),true),brl);
+  conta($('k2'),ativos.filter(r=>!r.pago).reduce((a,r)=>a+Number(r.valor),0),brl);
+  conta($('k3'),ativos.filter(r=>r.data.slice(0,7)===mesAtual).length,v=>Math.round(v));
+  conta($('k4'),new Set(ativos.map(r=>r.whatsapp||r.nome)).size,v=>Math.round(v));
+  const eixo={responsive:true,maintainAspectRatio:false,scales:{x:{grid:{display:false}},y:{grid:{color:line},beginAtZero:true,ticks:{precision:0}}},plugins:{legend:{display:false}}};
+  grafico('c1',{type:'bar',data:{labels:meses.map(m=>m.toLocaleDateString('pt-BR',{month:'short'})),datasets:[
+    {label:'Recebido',data:meses.map(m=>soma(m,true)),backgroundColor:ok,borderRadius:8,stack:'a'},
+    {label:'A receber',data:meses.map(m=>soma(m,false)),backgroundColor:warn,borderRadius:8,stack:'a'}]},
+    options:{...eixo,scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,grid:{color:line},beginAtZero:true,ticks:{callback:v=>'R$ '+v}}},plugins:{legend:{position:'bottom'}}}});
+  const dias=['Seg','Ter','Qua','Qui','Sex','Sáb'];
+  grafico('c2',{type:'bar',data:{labels:dias,datasets:[{data:dias.map((_,i)=>ativos.filter(r=>new Date(r.data+'T12:00').getDay()===i+1).length),backgroundColor:ac,borderRadius:8}]},options:eixo});
+  const on=ativos.filter(r=>r.modalidade==='Online').length;
+  grafico('c3',{type:'doughnut',data:{labels:['Presencial','Online'],datasets:[{data:[ativos.length-on,on],backgroundColor:[ac,ok],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'66%',plugins:{legend:{position:'bottom'}}}});
+}
+
 async function init(){const{data:{session}}=await sb.auth.getSession();session?abrir():$('login').hidden=false}
 function abrir(){$('login').hidden=true;$('app').hidden=false;carregar()}
 $('entrar').onclick=async()=>{const{error}=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value});
   if(error)$('err').textContent='E-mail ou senha incorretos.';else abrir()};
 $('sair').onclick=async()=>{await sb.auth.signOut();location.reload()};
+$('demo').onclick=()=>{demoOn=!demoOn;$('bd').hidden=!demoOn;$('demo').textContent=demoOn?'Voltar aos dados reais':'Ver com dados de exemplo';painel()};
 async function carregar(){const{data,error}=await sb.from('consultas').select('*').order('data').order('hora');
-  if(error){$('agenda').textContent='Erro ao carregar: '+error.message;return}rows=data;desenha()}
+  if(error){$('agenda').textContent='Erro ao carregar: '+error.message;return}rows=data;desenha();painel()}
 
 function desenha(){
   const hoje=ymd(new Date()),ativos=rows.filter(r=>r.status!=='Cancelada'),prox=ativos.filter(r=>r.data>=hoje);
-  $('s1').textContent=prox.filter(r=>r.data===hoje).length;
   const pac={};ativos.forEach(r=>{const k=r.whatsapp||r.nome;(pac[k]??={nome:r.nome,n:0,pago:0});pac[k].n++;if(r.pago)pac[k].pago+=Number(r.valor)});
-  $('s2').textContent=Object.keys(pac).length;
-  $('s3').textContent=brl(ativos.filter(r=>!r.pago).reduce((a,r)=>a+Number(r.valor),0));
   $('agenda').innerHTML=prox.length?prox.map(r=>`<div class="row">
     <div class="when">${r.hora.slice(0,5)}<small>${fdata(r.data)}</small></div>
     <div class="who">${esc(r.nome)}</div><span class="tag">${esc(r.modalidade)}</span>
@@ -72,6 +125,6 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]')
   if(a==='zap')window.open(zapUrl(r,lembrete(r)),'_blank','noopener');
   if(a==='pix'){aberto[r.id]=!aberto[r.id];desenha()}
   if(a==='copiar')navigator.clipboard.writeText(pixCode(r.valor)).then(()=>b.textContent='Copiado');
-  if(a==='zappix')window.open(zapUrl(r,'Olá! Segue o Pix da sessão ('+brl(r.valor)+'), copia e cola:\n'+pixCode(r.valor)),'_blank','noopener')});
+  if(a==='zappix')window.open(zapUrl(r,pixCode(r.valor)),'_blank','noopener')});
 init();
 </script></body></html>
