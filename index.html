@@ -42,6 +42,16 @@ html{scroll-behavior:smooth}
 .d:disabled{opacity:.3;cursor:not-allowed}
 .d.hoje{border-color:var(--ac)}
 .d[aria-pressed=true]{background:var(--ac);color:var(--acink);border-color:var(--ac)}
+.vaga{display:block;margin-top:14px;border:1.5px solid var(--ac);background:color-mix(in srgb,var(--s) 75%,transparent);border-radius:999px;padding:10px 18px;font-weight:600;text-align:left}
+.resp{text-align:center}
+.orb{width:170px;height:170px;margin:20px auto 6px;border:0;border-radius:50%;display:grid;place-items:center;font:600 20px Fraunces,Georgia,serif;color:var(--acink);background:radial-gradient(circle at 35% 30%,var(--ok),var(--ac));box-shadow:0 14px 40px color-mix(in srgb,var(--ac) 40%,transparent);transition:transform 4s ease-in-out}
+.orb.in{transform:scale(1.35)}.orb.out{transform:scale(.85)}
+@media(prefers-reduced-motion:reduce){.orb{transition:none}}
+details{border-top:1px solid var(--line);padding:12px 0}
+details:first-of-type{border-top:0}
+summary{cursor:pointer;font-weight:600}
+details p{margin:8px 0 0;color:var(--mut)}
+.wa{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:6;background:#1FA855;color:#fff;border-radius:999px;padding:13px 20px;font-weight:600;text-decoration:none;box-shadow:0 10px 28px rgba(0,0,0,.3)}
 </style></head>
 <body>
 <header class="top2"><span class="logo" id="logo">Agende sua consulta</span><a class="btn s" href="#agendar">Agendar</a></header>
@@ -50,12 +60,17 @@ html{scroll-behavior:smooth}
 <h1>Um espaço seguro para você se ouvir com calma</h1>
 <p class="lead">Terapia individual com acolhimento, sigilo e sem pressa. Escolha seu horário em menos de um minuto.</p>
 <a class="btn big" href="#agendar">Agendar minha primeira conversa</a>
+<button class="vaga" id="vaga" hidden></button>
 <ul class="pts"><li>Sigilo profissional</li><li>Sessões de 50 minutos</li><li>Confirmação pelo WhatsApp</li></ul>
 <p class="mut" id="quem"></p></div></section>
 <section class="wrap steps"><h2>Como funciona</h2>
 <ol><li><b>1</b><h3 style="margin:0 0 4px">Escolha o horário</h3><p>Veja os dias livres e reserve o que combina com você.</p></li>
 <li><b>2</b><h3 style="margin:0 0 4px">Receba a confirmação</h3><p>Eu confirmo com você pelo WhatsApp.</p></li>
 <li><b>3</b><h3 style="margin:0 0 4px">Faça a sessão</h3><p>No consultório ou online, com o link enviado antes.</p></li></ol></section>
+<section class="wrap"><div class="card resp"><h2>Respire um minuto comigo</h2>
+<p class="mut">Um exercício simples para desacelerar antes de decidir qualquer coisa.</p>
+<button class="orb" id="orb" aria-live="polite"><span id="orbt">Começar</span></button>
+<p class="mut" id="orbc"></p></div></section>
 <section class="wrap" id="agendar"><div class="card book"><h2>Agende sua primeira conversa</h2>
 <p class="mut">Sessão de acolhimento de 50 minutos.</p>
 <div class="cal-h"><button class="nav" id="ant" aria-label="Mês anterior">‹</button>
@@ -69,6 +84,11 @@ html{scroll-behavior:smooth}
 <select id="modo" aria-label="Modalidade"><option>Presencial</option><option>Online</option></select>
 <button class="btn" id="ok" disabled>Agendar horário</button></div>
 <div class="msg" id="msg" hidden></div></div></section>
+<section class="wrap"><div class="card"><h2>Perguntas frequentes</h2>
+<details><summary>Como é a primeira sessão?</summary><p>É uma conversa de acolhimento de 50 minutos, para você contar o que te trouxe e para conhecermos como posso ajudar.</p></details>
+<details><summary>Posso fazer online?</summary><p>Sim. Ao escolher a modalidade online, você recebe o link da sessão antes do horário.</p></details>
+<details><summary>Como funcionam meus dados?</summary><p>Eles são usados apenas para agendar e confirmar a sua consulta.</p></details>
+<details><summary>Posso remarcar?</summary><p>Pode. Avise pelo WhatsApp com antecedência para combinarmos um novo horário.</p></details></div></section>
 <p class="foot">Seus dados são usados apenas para agendar e confirmar sua consulta.</p>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
@@ -134,5 +154,32 @@ $('ok').onclick=async()=>{
   $('nome').value='';$('zap').value='';
   await escolherDia(new Date(dia+'T12:00'));
 };
-desenha();
+
+let resp=null;
+function parar(){clearInterval(resp);resp=null;$('orb').className='orb';$('orbt').textContent='Começar'}
+$('orb').onclick=()=>{
+  if(resp){parar();$('orbc').textContent='';return}
+  let t=0;
+  const passo=()=>{
+    if(t>=12){parar();$('orbc').textContent='Pronto. Quando quiser, escolha um horário abaixo.';return}
+    const inala=t%2===0;$('orb').className='orb '+(inala?'in':'out');$('orbt').textContent=inala?'Inspire':'Expire';
+    $('orbc').textContent='Ciclo '+(Math.floor(t/2)+1)+' de 6';t++};
+  passo();resp=setInterval(passo,4000)};
+
+async function vagaProxima(){
+  try{
+    const agora=new Date();
+    for(let i=0;i<30;i++){
+      const d=new Date(hojeD);d.setDate(d.getDate()+i);if(!livre(d))continue;
+      const{data}=await sb.rpc('horarios_ocupados',{dia:ymd(d)});
+      const oc=(data||[]).map(x=>x.hora.slice(0,5));
+      const h=C.HORAS.find(x=>!oc.includes(x)&&!(i===0&&(+x.slice(0,2)*60+ +x.slice(3))<=agora.getHours()*60+agora.getMinutes()));
+      if(h){const b=$('vaga');b.hidden=false;
+        b.textContent='Próxima vaga: '+d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})+' às '+h+'. Reservar';
+        b.onclick=async()=>{await escolherDia(d);hora=h;desenha();$('agendar').scrollIntoView({behavior:'smooth'})};return}
+    }
+  }catch(e){}
+}
+if(C.WHATSAPP){const a=document.createElement('a');a.className='wa';a.href='https://wa.me/'+C.WHATSAPP.replace(/\D/g,'');a.target='_blank';a.rel='noopener';a.textContent='Falar no WhatsApp';document.body.appendChild(a)}
+desenha();vagaProxima();
 </script></body></html>
