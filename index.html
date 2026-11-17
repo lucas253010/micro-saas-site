@@ -31,6 +31,17 @@ html{scroll-behavior:smooth}
 .chip[aria-pressed=true]{background:var(--ac);color:var(--acink);border-color:var(--ac)}
 .foot{text-align:center;color:var(--mut);font-size:14px;padding:8px 16px 32px}
 @media(max-width:640px){.steps ol{grid-template-columns:1fr}}
+.cal-h{display:flex;align-items:center;gap:8px;margin-top:14px}
+.cal-h select{flex:1;min-width:0;text-transform:capitalize}
+.nav{flex:none;width:42px;height:42px;border:1px solid var(--line);background:none;border-radius:10px;font-size:20px}
+.nav:disabled{opacity:.35;cursor:not-allowed}
+.grade{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:12px}
+.sem{text-align:center;font-size:12px;color:var(--mut);padding-bottom:2px}
+.d{aspect-ratio:1;min-height:40px;border:1px solid transparent;background:none;border-radius:12px;font-weight:600}
+.d:not(:disabled):hover{background:var(--soft)}
+.d:disabled{opacity:.3;cursor:not-allowed}
+.d.hoje{border-color:var(--ac)}
+.d[aria-pressed=true]{background:var(--ac);color:var(--acink);border-color:var(--ac)}
 </style></head>
 <body>
 <header class="top2"><span class="logo" id="logo">Agende sua consulta</span><a class="btn s" href="#agendar">Agendar</a></header>
@@ -47,7 +58,12 @@ html{scroll-behavior:smooth}
 <li><b>3</b><h3 style="margin:0 0 4px">Faça a sessão</h3><p>No consultório ou online, com o link enviado antes.</p></li></ol></section>
 <section class="wrap" id="agendar"><div class="card book"><h2>Agende sua primeira conversa</h2>
 <p class="mut">Sessão de acolhimento de 50 minutos.</p>
-<div class="chips" id="dias"></div><div class="slots" id="horas"></div>
+<div class="cal-h"><button class="nav" id="ant" aria-label="Mês anterior">‹</button>
+<select id="selmes" aria-label="Mês"></select><select id="selano" aria-label="Ano"></select>
+<button class="nav" id="prox" aria-label="Próximo mês">›</button></div>
+<div class="grade" id="grade"></div>
+<p class="mut" id="qdia">Escolha um dia no calendário.</p>
+<div class="slots" id="horas"></div>
 <div class="field"><input id="nome" placeholder="Seu nome" autocomplete="name">
 <input id="zap" placeholder="WhatsApp com DDD" inputmode="tel" autocomplete="tel">
 <select id="modo" aria-label="Modalidade"><option>Presencial</option><option>Online</option></select>
@@ -56,17 +72,47 @@ html{scroll-behavior:smooth}
 <p class="foot">Seus dados são usados apenas para agendar e confirmar sua consulta.</p>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
 <script>
 const C=CFG,sb=supabase.createClient(C.SUPABASE_URL,C.SUPABASE_KEY),$=i=>document.getElementById(i);
 let dia=null,hora=null,ocupados=[];
+const ATEND=C.DIAS_ATENDIMENTO||[0,1,2,3,4,5,6];
+const hojeD=new Date();hojeD.setHours(0,0,0,0);
+const limite=C.MESES_A_FRENTE?new Date(hojeD.getFullYear(),hojeD.getMonth()+C.MESES_A_FRENTE+1,0):null;
+let mes=new Date(hojeD.getFullYear(),hojeD.getMonth(),1);
 $('quem').textContent=C.NOME+', '+C.SUBTITULO;$('logo').textContent=C.NOME;document.title='Agende com '+C.NOME;
 const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-const dias=[];for(let i=0;dias.length<C.DIAS_A_FRENTE&&i<40;i++){const d=new Date();d.setDate(d.getDate()+i);if(d.getDay()>0&&d.getDay()<6)dias.push(d)}
-async function escolherDia(d){dia=ymd(d);hora=null;const{data}=await sb.rpc('horarios_ocupados',{dia});ocupados=(data||[]).map(x=>x.hora.slice(0,5));desenha()}
+const livre=d=>d>=hojeD&&ATEND.includes(d.getDay())&&(!limite||d<=limite);
+
+for(let m=0;m<12;m++){const o=document.createElement('option');o.value=m;o.textContent=new Date(2000,m,1).toLocaleDateString('pt-BR',{month:'long'});$('selmes').appendChild(o)}
+function addAno(y){if([...$('selano').options].some(o=>+o.value===y))return;const o=document.createElement('option');o.value=y;o.textContent=y;$('selano').appendChild(o)}
+for(let y=hojeD.getFullYear();y<hojeD.getFullYear()+10;y++)addAno(y);
+function ir(y,m){let d=new Date(y,m,1);const min=new Date(hojeD.getFullYear(),hojeD.getMonth(),1);if(d<min)d=min;mes=d;desenha()}
+$('ant').onclick=()=>ir(mes.getFullYear(),mes.getMonth()-1);
+$('prox').onclick=()=>ir(mes.getFullYear(),mes.getMonth()+1);
+$('selmes').onchange=()=>ir(mes.getFullYear(),+$('selmes').value);
+$('selano').onchange=()=>ir(+$('selano').value,mes.getMonth());
+
+function calendario(){
+  const y=mes.getFullYear(),m=mes.getMonth();addAno(y);
+  $('selmes').value=m;$('selano').value=y;
+  $('ant').disabled=y===hojeD.getFullYear()&&m===hojeD.getMonth();
+  $('prox').disabled=!!limite&&new Date(y,m+1,1)>limite;
+  const g=$('grade');g.innerHTML='';
+  ['dom','seg','ter','qua','qui','sex','sáb'].forEach(s=>{const e=document.createElement('div');e.className='sem';e.textContent=s;g.appendChild(e)});
+  for(let i=0;i<new Date(y,m,1).getDay();i++)g.appendChild(document.createElement('div'));
+  for(let n=1;n<=new Date(y,m+1,0).getDate();n++){
+    const d=new Date(y,m,n),b=document.createElement('button');b.className='d'+(ymd(d)===ymd(hojeD)?' hoje':'');
+    b.textContent=n;b.disabled=!livre(d);b.setAttribute('aria-pressed',ymd(d)===dia);b.onclick=()=>escolherDia(d);g.appendChild(b)}
+}
+async function escolherDia(d){dia=ymd(d);hora=null;mes=new Date(d.getFullYear(),d.getMonth(),1);
+  const{data}=await sb.rpc('horarios_ocupados',{dia});ocupados=(data||[]).map(x=>x.hora.slice(0,5));desenha()}
 function desenha(){
-  $('dias').innerHTML='';dias.forEach(d=>{const b=document.createElement('button');b.className='chip';b.setAttribute('aria-pressed',ymd(d)===dia);
-    b.textContent=d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'});b.onclick=()=>escolherDia(d);$('dias').appendChild(b)});
-  $('horas').innerHTML='';if(!dia)return;const agora=new Date(),hoje=ymd(agora)===dia;
+  calendario();$('horas').innerHTML='';
+  $('qdia').textContent=dia?'Horários de '+new Date(dia+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}):'Escolha um dia no calendário.';
+  if(!dia){valida();return}
+  const agora=new Date(),hoje=ymd(agora)===dia;
   C.HORAS.forEach(h=>{const b=document.createElement('button');b.className='chip';b.textContent=h;
     const passou=hoje&&(+h.slice(0,2)*60+ +h.slice(3))<=agora.getHours()*60+agora.getMinutes();
     b.disabled=ocupados.includes(h)||passou;b.setAttribute('aria-pressed',hora===h);b.onclick=()=>{hora=h;desenha()};$('horas').appendChild(b)});
@@ -79,8 +125,14 @@ $('ok').onclick=async()=>{
   $('ok').disabled=true;
   const{error}=await sb.from('consultas').insert({data:dia,hora,nome,whatsapp:zap,modalidade:modo,link_sessao:link,valor:C.VALOR});
   $('msg').hidden=false;
-  if(error){$('msg').textContent=error.code==='23505'?'Esse horário acabou de ser ocupado. Escolha outro.':'Não foi possível agendar: '+error.message;await escolherDia(new Date(dia+'T12:00'));return}
+  if(error){
+    $('msg').textContent=error.code==='23505'?'Esse horário acabou de ser ocupado. Escolha outro.':'Não foi possível agendar: '+error.message;
+    await escolherDia(new Date(dia+'T12:00'));
+    return;
+  }
   $('msg').textContent='Pronto, '+nome+'. Seu horário foi reservado e vou confirmar pelo WhatsApp.';
-  $('nome').value='';$('zap').value='';await escolherDia(new Date(dia+'T12:00'))};
-desenha();escolherDia(dias[0]);
+  $('nome').value='';$('zap').value='';
+  await escolherDia(new Date(dia+'T12:00'));
+};
+desenha();
 </script></body></html>
