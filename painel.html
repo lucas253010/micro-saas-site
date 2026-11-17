@@ -52,7 +52,7 @@ summary .mut{font-weight:400;margin:0;font-size:14px}
 <section class="card" id="p-prox" hidden><h2>Próximas consultas</h2><div id="agenda-prox"></div></section>
 <section class="card" id="p-blq" hidden><h2>Bloqueios de agenda</h2>
 <p class="mut">Feriados, férias, almoço ou qualquer horário em que você não atende. O site do paciente respeita na hora.</p>
-<div class="field"><input id="bdata" type="date"><select id="bhora"></select><input id="bmot" placeholder="Motivo (opcional)"><button class="btn" id="bsalvar">Bloquear</button></div>
+<div class="field"><label class="mut" style="flex:1;min-width:150px;margin:0">De<input id="bdata" type="date" style="width:100%"></label><label class="mut" style="flex:1;min-width:150px;margin:0">Até (opcional)<input id="bate" type="date" style="width:100%"></label><select id="bhora"></select><input id="bmot" placeholder="Motivo (opcional)"><button class="btn" id="bsalvar">Bloquear</button></div>
 <div id="blista"></div></section>
 <section class="card" id="p-pac" hidden><h2>Todos os pacientes</h2><button class="btn s" id="csv">Exportar planilha (CSV)</button>
 <input id="busca" type="search" placeholder="Buscar paciente pelo nome" style="width:100%;margin:8px 0 4px"><div id="pacientes"></div></section></div></main>
@@ -172,7 +172,7 @@ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>trocaAba(b.data
 async function upd(r,p){const{error}=await sb.from('consultas').update(p).eq('id',r.id);error?alert(error.message):carregar()}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]');if(!b)return;
   const r=rows.find(x=>x.id===b.dataset.id),a=b.dataset.a;
-  if(a==='bdel'){const{error}=await sb.from('bloqueios').delete().eq('id',b.dataset.id);error?alert(error.message):carregaBlq();return}
+  if(a==='bdel'){const{error}=await sb.from('bloqueios').delete().in('id',b.dataset.id.split(','));error?alert(error.message):carregaBlq();return}
   if(a==='conf')upd(r,{status:'Confirmada'});
   if(a==='pres')upd(r,{presenca:b.dataset.v});
   if(a==='remarc'){remarc[r.id]=!remarc[r.id];desenha()}
@@ -196,11 +196,19 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]')
   if(a==='zappix')window.open(zapUrl(r,pixCode(r.valor)),'_blank','noopener')});
 $('bhora').innerHTML='<option value="">Dia inteiro</option>'+C.HORAS.map(x=>`<option>${x}</option>`).join('');
 async function carregaBlq(){const{data,error}=await sb.from('bloqueios').select('*').order('data').order('hora');blq=error?[]:data;desenhaBlq()}
-function desenhaBlq(){const hoje=ymd(new Date()),l=blq.filter(b=>b.data>=hoje);
-  $('blista').innerHTML=l.length?l.map(b=>`<div class="row"><div class="when">${b.hora?b.hora.slice(0,5):'Dia todo'}<small>${fdata(b.data)}</small></div><div class="who">${esc(b.motivo||'Sem motivo')}</div><button class="btn s" data-a="bdel" data-id="${b.id}">Remover</button></div>`).join(''):'<p class="mut">Nenhum bloqueio.</p>'}
-$('bsalvar').onclick=async()=>{if(!$('bdata').value)return alert('Escolha a data.');
-  const{error}=await sb.from('bloqueios').insert({data:$('bdata').value,hora:$('bhora').value||null,motivo:$('bmot').value.trim()||null});
-  if(error)alert(error.message);else{$('bmot').value='';carregaBlq()}};
+function desenhaBlq(){const hoje=ymd(new Date()),l=blq.filter(b=>b.data>=hoje),g=[];
+  l.forEach(b=>{const u=g[g.length-1];let prox=null;if(u){prox=new Date(u.fim+'T12:00');prox.setDate(prox.getDate()+1)}
+    if(u&&u.hora===b.hora&&u.motivo===b.motivo&&ymd(prox)===b.data){u.fim=b.data;u.ids.push(b.id)}else g.push({ini:b.data,fim:b.data,hora:b.hora,motivo:b.motivo,ids:[b.id]})});
+  $('blista').innerHTML=g.length?g.map(x=>`<div class="row"><div class="when">${x.hora?x.hora.slice(0,5):'Dia todo'}<small>${x.ini===x.fim?fdata(x.ini):fdata(x.ini)+' a '+fdata(x.fim)}</small></div><div class="who">${esc(x.motivo||'Sem motivo')}</div><button class="btn s" data-a="bdel" data-id="${x.ids.join(',')}">Remover</button></div>`).join(''):'<p class="mut">Nenhum bloqueio.</p>'}
+$('bsalvar').onclick=async()=>{const ini=$('bdata').value,fim=$('bate').value||ini;
+  if(!ini)return alert('Escolha a data inicial.');if(fim<ini)return alert('A data final não pode ser antes da inicial.');
+  const hr=$('bhora').value||null,mot=$('bmot').value.trim()||null,linhas=[];
+  for(let d=new Date(ini+'T12:00');ymd(d)<=fim&&linhas.length<366;d.setDate(d.getDate()+1))linhas.push({data:ymd(d),hora:hr,motivo:mot});
+  const{error}=await sb.from('bloqueios').insert(linhas);
+  if(error)return alert(error.message);
+  const n=rows.filter(r=>r.status!=='Cancelada'&&r.data>=ini&&r.data<=fim&&(!hr||r.hora.slice(0,5)===hr)).length;
+  $('bmot').value='';$('bdata').value='';$('bate').value='';carregaBlq();
+  if(n)alert('Atenção: já existem '+n+' consulta(s) nesse período. Elas continuam na agenda: remarque ou cancele.')};
 $('csv').onclick=()=>{const L=[['Data','Hora','Paciente','WhatsApp','Modalidade','Status','Presença','Pago','Valor']].concat(rows.map(r=>[r.data,r.hora.slice(0,5),r.nome,r.whatsapp||'',r.modalidade,r.status,r.presenca||'',r.pago?'Sim':'Não',Number(r.valor).toFixed(2).replace('.',',')]));
   const csv='\ufeff'+L.map(l=>l.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='consultas.csv';a.click()};
